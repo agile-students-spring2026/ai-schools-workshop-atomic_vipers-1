@@ -1,16 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   searchDistricts,
   getDistrictById,
   getDistrictsByIds,
+  getAllDistricts,
   filterDistricts,
   sortDistricts,
   paginateDistricts,
-  mapApiResultToDistrict,
-  fetchDistrictsFromApi,
 } from '@/lib/api-client'
 import { fallbackDistricts } from '@/lib/fallback-data'
-import { District, SearchParams } from '@/lib/types'
+import { District } from '@/lib/types'
 
 const mockDistricts: District[] = [
   {
@@ -54,43 +53,11 @@ const mockDistricts: District[] = [
   },
 ]
 
-describe('mapApiResultToDistrict', () => {
-  it('maps Urban API result to District type', () => {
-    const apiResult = {
-      leaid: '1234567',
-      lea_name: 'Test District',
-      state_name: 'California',
-      state_mailing: 'CA',
-      city_mailing: 'Los Angeles',
-      urban_centric_locale: 11,
-      enrollment: 5000,
-    }
-
-    const result = mapApiResultToDistrict(apiResult)
-    expect(result.id).toBe('1234567')
-    expect(result.name).toBe('Test District')
-    expect(result.state).toBe('California')
-    expect(result.stateAbbreviation).toBe('CA')
-    expect(result.city).toBe('Los Angeles')
-    expect(result.locale).toBe('urban')
-    expect(result.enrollment).toBe(5000)
-    expect(result.graduationRate).toBeNull()
-  })
-
-  it('handles missing enrollment', () => {
-    const apiResult = {
-      leaid: '1234567',
-      lea_name: 'Test District',
-      state_name: 'California',
-      state_mailing: 'CA',
-      city_mailing: 'LA',
-      urban_centric_locale: 21,
-      enrollment: undefined as unknown as number,
-    }
-
-    const result = mapApiResultToDistrict(apiResult)
-    expect(result.enrollment).toBe(0)
-    expect(result.locale).toBe('suburban')
+describe('getAllDistricts', () => {
+  it('returns the fallback districts', () => {
+    const result = getAllDistricts()
+    expect(result).toBe(fallbackDistricts)
+    expect(result.length).toBeGreaterThan(0)
   })
 })
 
@@ -212,90 +179,26 @@ describe('paginateDistricts', () => {
   })
 })
 
-describe('fetchDistrictsFromApi', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('fetches districts from Urban API', async () => {
-    const mockResponse = {
-      results: [
-        {
-          leaid: '111',
-          lea_name: 'Test',
-          state_name: 'California',
-          state_mailing: 'CA',
-          city_mailing: 'LA',
-          urban_centric_locale: 11,
-          enrollment: 100,
-        },
-      ],
-    }
-
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockResponse,
-    } as Response)
-
-    const result = await fetchDistrictsFromApi('California')
-    expect(result).toHaveLength(1)
-    expect(result[0].name).toBe('Test')
-  })
-
-  it('fetches without state filter', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    } as Response)
-
-    const result = await fetchDistrictsFromApi()
-    expect(result).toHaveLength(0)
-  })
-
-  it('throws when API returns non-ok response', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-    } as Response)
-
-    await expect(fetchDistrictsFromApi()).rejects.toThrow(
-      'API request failed with status 500'
-    )
-  })
-})
-
 describe('searchDistricts', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('falls back to fallback data when API fails', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Network error'))
-
+  it('returns districts from local data', async () => {
     const result = await searchDistricts({ query: 'Los Angeles' })
     expect(result.districts.length).toBeGreaterThanOrEqual(1)
     expect(result.total).toBeGreaterThanOrEqual(1)
   })
 
   it('uses default page and limit', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('fail'))
-
     const result = await searchDistricts({})
     expect(result.page).toBe(1)
     expect(result.limit).toBe(20)
   })
 
   it('respects custom page and limit', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('fail'))
-
     const result = await searchDistricts({ page: 2, limit: 5 })
     expect(result.page).toBe(2)
     expect(result.limit).toBe(5)
   })
 
   it('sorts and filters correctly', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('fail'))
-
     const result = await searchDistricts({
       sortBy: 'enrollment',
       sortOrder: 'desc',
@@ -310,92 +213,25 @@ describe('searchDistricts', () => {
 })
 
 describe('getDistrictById', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('returns district from API', async () => {
-    const mockResponse = {
-      results: [
-        {
-          leaid: '0600001',
-          lea_name: 'Los Angeles Unified',
-          state_name: 'California',
-          state_mailing: 'CA',
-          city_mailing: 'Los Angeles',
-          urban_centric_locale: 11,
-          enrollment: 574570,
-        },
-      ],
-    }
-
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => mockResponse,
-    } as Response)
-
+  it('returns district when found', async () => {
     const result = await getDistrictById('0600001')
     expect(result).not.toBeNull()
     expect(result!.name).toBe('Los Angeles Unified')
   })
 
-  it('returns fallback when API returns no results', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    } as Response)
-
-    const result = await getDistrictById('0600001')
-    expect(result).not.toBeNull()
-    expect(result!.name).toBe('Los Angeles Unified')
-  })
-
-  it('returns fallback when API fails', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Network'))
-
-    const result = await getDistrictById('0600001')
-    expect(result).not.toBeNull()
-  })
-
-  it('returns fallback when API returns non-ok status', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-    } as Response)
-
-    const result = await getDistrictById('0600001')
-    expect(result).not.toBeNull()
-  })
-
-  it('returns null when not found anywhere', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ results: [] }),
-    } as Response)
-
+  it('returns null when not found', async () => {
     const result = await getDistrictById('nonexistent')
     expect(result).toBeNull()
   })
 })
 
 describe('getDistrictsByIds', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
   it('returns districts for valid ids', async () => {
-    vi.spyOn(global, 'fetch').mockRejectedValue(new Error('fail'))
-
     const result = await getDistrictsByIds(['0600001', '3600001'])
     expect(result.length).toBe(2)
   })
 
   it('filters out null results', async () => {
-    vi.spyOn(global, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({ results: [] }),
-    } as Response)
-
     const result = await getDistrictsByIds(['nonexistent1', 'nonexistent2'])
     expect(result.length).toBe(0)
   })
